@@ -49,7 +49,7 @@ class ApplicationCliTests(unittest.TestCase):
             exit_code = main(["migrate", str(database)])
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(len(payload["migrations"]), 51)
+        self.assertEqual(len(payload["migrations"]), 52)
         self.assertTrue(all(item["status"] == "Applied" for item in payload["migrations"]))
         self.assertEqual(len(payload["preflight_database_hash"]), 64)
         self.assertIsNotNone(payload["migration_execution_id"])

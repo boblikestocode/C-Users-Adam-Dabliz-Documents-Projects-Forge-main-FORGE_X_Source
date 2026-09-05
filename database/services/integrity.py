@@ -2291,6 +2291,10 @@ def run_health_gate(
     findings.extend(verify_import_reconciliation(connection))
     findings.extend(verify_import_discovery(connection))
     findings.extend(verify_source_fingerprints(connection))
+    from .extraction_staging import verify_extraction_receipts
+    findings.extend(_finding("WORKBOOK_EXTRACTION_REPRODUCTION_MISMATCH", detail,
+                             "Source Workbook", workbook_id)
+                    for workbook_id, detail in verify_extraction_receipts(connection))
     findings.extend(verify_event_summary_generations(connection))
     findings.extend(verify_search_generations(connection))
     findings.extend(verify_part_history_generations(connection))

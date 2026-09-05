@@ -4,6 +4,30 @@ The user resumed development and authorized autonomous implementation, testing,
 failure correction, and a project-scoped build. This record supersedes the pause
 and next-slice status in the earlier handoff; that handoff remains retained.
 
+## Latest continuation: workbook extraction
+
+Migration `0052` connects OOXML workbook extraction to the existing governed
+staging and commit workflow. The adapter inventories every visible/hidden tab,
+retains exact cell and XML evidence, reports deterministic PBD/non-PBD/review/
+failure classifications, and supports review without reopening the original
+file. Immutable receipts are independently reconstructed by the health gate.
+Mapped commits must agree with retained source values; partial candidates need
+explicit buyer structure confirmation and summary tabs remain excluded.
+
+The `discover-workbook` CLI provides read-only inventory. See
+`FORGE_X_WORKBOOK_EXTRACTION.md` for commands, adapter boundaries, and the full
+integration sequence.
+
+- Complete regression suite: **189 tests passed in 156.031 seconds**.
+- After adding workbook XML/relationship metadata retention, all **12 adapter
+  and staging tests passed in 2.879 seconds**. Subsequent edits are documentation.
+- Synthetic acceptance verifies one file open, 53 scanned tabs, 52 qualifying
+  PBDs, and one ignored summary, including hidden and very-hidden worksheets.
+- The documented Mayco reference file was not found. Its current path or another
+  representative supplier workbook is required for real-template acceptance.
+- Production encryption/identity settings remain unresolved; this continuation
+  does not claim a production-complete executable or buyer UI.
+
 ## Implemented changes
 
 - Migration `0050` versions profile geographic/age populations and piece-price
@@ -38,7 +62,7 @@ and next-slice status in the earlier handoff; that handoff remains retained.
 - The health gate independently reconstructs distribution payloads and hashes.
   The read-only `supplier-rates` CLI exposes the same scoped calculation.
 
-## Validation
+## Prior profile/rate continuation validation
 
 - Final complete regression suite: **177 tests passed in 146.831 seconds**.
 - Command: `python -m unittest discover -s database\tests -p 'test_*.py'`.

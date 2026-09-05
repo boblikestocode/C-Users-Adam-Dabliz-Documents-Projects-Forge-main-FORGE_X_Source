@@ -24,7 +24,11 @@ The initial database-design package is maintained in:
 ## Current implementation status
 
 The September 5 continuation is documented in `docs/FORGE_X_BUILD_2026-09-05.md`.
-Migrations now extend through `0051`. New supplier profiles enforce regional source
+Migrations now extend through `0052`. The workbook adapter and staging workflow
+are documented in `docs/FORGE_X_WORKBOOK_EXTRACTION.md`. Inspect an OOXML workbook
+with `python -m app.cli discover-workbook 'C:\path\supplier.xlsx'`.
+
+New supplier profiles enforce regional source
 lineage and reevaluate economic age at their pinned cutoff. New piece-price
 projections, scenario creation/finalization, and round evolution also check fresh
 economic age. Prior profile and projection generations retain their original

@@ -5,6 +5,8 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
+from zipfile import BadZipFile
+from xml.etree.ElementTree import ParseError
 
 from database.migration_runner import safe_apply_migrations
 from database.services.connection import connect
@@ -12,6 +14,7 @@ from database.services.integrity import assess_analysis_readiness
 from database.services.operations import operational_status
 from database.services.workflow import assess_event_workflow
 from database.services.supplier_rates import derive_supplier_rate_distributions
+from database.services.workbook_extraction import extract_workbook
 
 
 def health_payload(database: Path) -> dict[str, object]:
@@ -63,12 +66,23 @@ def build_parser() -> argparse.ArgumentParser:
     rates.add_argument("region_code")
     rates.add_argument("--cutoff", required=True, help="Evidence cutoff in UTC")
     rates.add_argument("--plant", default=None)
+    discover = commands.add_parser("discover-workbook", help="Inventory OOXML PBD tabs and retained cell evidence without database changes")
+    discover.add_argument("workbook", type=Path)
+    discover.add_argument("--profile", type=Path, help="Versioned JSON exact-marker detection profile")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "migrate":
+    if args.command == "discover-workbook":
+        try:
+            profile = None if args.profile is None else json.loads(args.profile.read_text(encoding="utf-8"))
+            payload = extract_workbook(args.workbook, profile=profile).summary()
+            exit_code = 1 if payload["failed_tabs"] else 0
+        except (OSError, ValueError, BadZipFile, ParseError, KeyError) as error:
+            payload = {"filename": args.workbook.name, "extraction_status": "Failed", "error": str(error)}
+            exit_code = 1
+    elif args.command == "migrate":
         safe_result = safe_apply_migrations(args.database)
         payload: dict[str, object] = {
             "database": str(args.database),

@@ -939,6 +939,8 @@ def commit_observation(
         if staged["import_context_type"] != observation.observation_context or \
                 staged["import_context_id"] != observation.context_id:
             raise ValueError("Committed observation context must match its staged import context")
+        from .extraction_staging import validate_commit_extraction
+        validate_commit_extraction(connection, staged["occurrence_id"], observation)
         transaction_id = connection.execute(
             """SELECT workbook.import_transaction_id FROM source_occurrence occurrence
                JOIN source_worksheet worksheet ON worksheet.worksheet_id = occurrence.worksheet_id

@@ -149,7 +149,7 @@ class CommodityCoreSchemaTests(unittest.TestCase):
             second = apply_migrations(database_path)
             self.assertEqual(
                 [result.version for result in first],
-                [f"{version:04d}" for version in range(1, 52)],
+                [f"{version:04d}" for version in range(1, 53)],
             )
             self.assertEqual(first[0].status, "Applied")
             self.assertTrue(all(result.status == "Applied" for result in first))

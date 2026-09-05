@@ -36,7 +36,7 @@ class SafeMigrationRunnerTests(unittest.TestCase):
         result = safe_apply_migrations(
             database, recovery_dir=self.base / "recovery",
         )
-        self.assertEqual(sum(item.status == "Applied" for item in result.migrations), 26)
+        self.assertEqual(sum(item.status == "Applied" for item in result.migrations), 27)
         self.assertIsNotNone(result.recovery_checkpoint_path)
         self.assertTrue(result.recovery_checkpoint_path.exists())
         self.assertEqual(result.recovery_checkpoint_hash,
