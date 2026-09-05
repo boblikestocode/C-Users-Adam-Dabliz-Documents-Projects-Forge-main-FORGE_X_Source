@@ -1,0 +1,17 @@
+# Local database files and SQLite/SQLCipher working files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+database/tests/tmp*/
+
+# Secrets and local configuration
+.env
+*.key
+*.pem
