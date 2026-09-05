@@ -8,6 +8,7 @@ from decimal import Decimal
 from .audit import canonical_json
 from .connection import immediate_transaction
 from .ids import uuid7
+from .profile_populations import economic_age_at_cutoff
 
 
 @dataclass(frozen=True)
@@ -43,8 +44,11 @@ def _decimal(coefficient: str | None, scale: int | None) -> Decimal | None:
 
 
 def projection_source_rows(
-    connection: sqlite3.Connection, event_id: str, evidence_cutoff_utc: str
-) -> list[sqlite3.Row]:
+    connection: sqlite3.Connection, event_id: str, evidence_cutoff_utc: str,
+    *, economic_age_population_version: str = "Legacy",
+) -> list[sqlite3.Row | tuple]:
+    if economic_age_population_version not in ("Legacy", "Cutoff Age v1"):
+        raise ValueError("Unsupported projection economic-age population version")
     rows = connection.execute(
         """WITH current_scope AS (
                SELECT ep.event_part_id
@@ -179,7 +183,7 @@ def projection_source_rows(
                 SELECT 1 FROM pbd_observation observation
                 WHERE observation.observation_id = price.observation_id
                   AND observation.recorded_at_utc <= ?
-                  AND NOT EXISTS (
+                  AND (? = 1 OR NOT EXISTS (
                       SELECT 1 FROM observation_eligibility eligibility
                       WHERE eligibility.observation_id = observation.observation_id
                         AND eligibility.analytical_role = 'Economic Age'
@@ -194,7 +198,7 @@ def projection_source_rows(
                                    (newer.recorded_at_utc = eligibility.recorded_at_utc AND
                                     newer.eligibility_id > eligibility.eligibility_id))
                         )
-                  )
+                  ))
             )
            ORDER BY scope.event_part_id, active.supplier_id""",
         (
@@ -204,6 +208,7 @@ def projection_source_rows(
             evidence_cutoff_utc, evidence_cutoff_utc,
             evidence_cutoff_utc, evidence_cutoff_utc,
             event_id, evidence_cutoff_utc, evidence_cutoff_utc,
+            int(economic_age_population_version == "Cutoff Age v1"),
             evidence_cutoff_utc, evidence_cutoff_utc,
         ),
     ).fetchall()
@@ -213,6 +218,10 @@ def projection_source_rows(
         if key in keys:
             raise ValueError(f"Multiple eligible piece prices resolve for supplier/part {key}")
         keys.add(key)
+    if economic_age_population_version == "Cutoff Age v1":
+        return [tuple(row) if row[4] is None or economic_age_at_cutoff(
+            connection, str(row[4]), evidence_cutoff_utc).eligibility_status == "Eligible"
+            else (*tuple(row)[:6], None, None, None, None) for row in rows]
     return rows
 
 
@@ -225,7 +234,8 @@ def build_active_round_part_projection(
     if connection.execute("SELECT 1 FROM sourcing_event WHERE event_id = ?", (event_id,)).fetchone() is None:
         raise ValueError("Sourcing event does not exist")
     generation_id = uuid7()
-    source_rows = projection_source_rows(connection, event_id, evidence_cutoff_utc)
+    source_rows = projection_source_rows(connection, event_id, evidence_cutoff_utc,
+                                         economic_age_population_version="Cutoff Age v1")
     manifest = [tuple(row) for row in source_rows]
     manifest_hash = hashlib.sha256(canonical_json(manifest).encode("utf-8")).hexdigest()
     with immediate_transaction(connection):
@@ -233,8 +243,8 @@ def build_active_round_part_projection(
             """INSERT INTO projection_generation_manifest
                (projection_generation_id, projection_type, event_id,
                 evidence_cutoff_utc, build_manifest_hash, projected_row_count,
-                generation_status, created_at_utc)
-               VALUES (?, 'Active Round Part', ?, ?, ?, ?, 'Complete', ?)""",
+                generation_status, created_at_utc, economic_age_population_version)
+               VALUES (?, 'Active Round Part', ?, ?, ?, ?, 'Complete', ?, 'Cutoff Age v1')""",
             (generation_id, event_id, evidence_cutoff_utc, manifest_hash,
              len(source_rows), evidence_cutoff_utc),
         )

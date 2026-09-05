@@ -5,7 +5,9 @@ Project: `C:\Users\Adam Dabliz\Documents\Projects\Forge-main\FORGE_X_Source`
 
 ## Resume instruction
 
-Development is paused at the user's request. Read `FORGE_X_DEVELOPMENT_HANDOFF_2026-09-05.md` for the latest handoff and resume only when requested. The instruction below describes the objective after resumption.
+The user resumed development after the pause recorded below. Read
+`FORGE_X_BUILD_2026-09-05.md` for the latest implementation and validation record.
+The remaining sections preserve the earlier checkpoint state.
 
 Continue the full objective: complete remaining Forge X development from the approved requirements while preserving immutable evidence and validating each implementation slice. Treat the worktree as authoritative and do not assume that passing tests prove all requirements are complete.
 

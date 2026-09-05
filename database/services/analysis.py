@@ -9,6 +9,7 @@ from .audit import AuditContext, append_audit_event, canonical_json
 from .connection import immediate_transaction
 from .decimals import ExactDecimal
 from .ids import uuid7
+from .profile_populations import economic_age_at_cutoff
 
 
 EVIDENCE_TABLES = {
@@ -156,6 +157,12 @@ def create_scenario_revision(
                 raise ValueError("GST baseline does not belong to the selected scope")
         for selection in evidence:
             _require_evidence(connection, selection.entity_type, selection.entity_id)
+            if selection.included and selection.entity_type == "PBD Observation":
+                age = economic_age_at_cutoff(connection, selection.entity_id, created_at_utc)
+                if age.eligibility_status != "Eligible":
+                    raise ValueError(
+                        f"Scenario evidence requires economic-age exclusion: {selection.entity_id} ({age.reason_code})"
+                    )
             if not selection.included and not selection.exclusion_reason:
                 raise ValueError("Excluded evidence requires an exclusion reason")
         included = {(item.entity_type, item.entity_id) for item in evidence if item.included}
@@ -443,17 +450,14 @@ def finalize_analysis(
         ).fetchone()[0]
         if unresolved_identity:
             raise ValueError("Supplier identity confirmation is required before finalization")
-        context_only_included = connection.execute(
-            """SELECT COUNT(*) FROM evidence_manifest_entry manifest
-               JOIN v_latest_observation_eligibility eligibility
-                 ON manifest.evidence_entity_type = 'PBD Observation'
-                AND manifest.evidence_entity_id = eligibility.observation_id
-               WHERE manifest.scenario_revision_id = ? AND manifest.included_flag = 1
-                 AND eligibility.analytical_role = 'Economic Age'
-                 AND eligibility.eligibility_status = 'Historical Context Only'""",
+        included_observations = connection.execute(
+            """SELECT evidence_entity_id FROM evidence_manifest_entry
+               WHERE scenario_revision_id = ? AND included_flag = 1
+                 AND evidence_entity_type = 'PBD Observation'""",
             (scenario_revision_id,),
-        ).fetchone()[0]
-        if context_only_included:
+        ).fetchall()
+        if any(economic_age_at_cutoff(connection, str(row[0]), finalized_at_utc).eligibility_status
+               != "Eligible" for row in included_observations):
             raise ValueError("Historical-context evidence cannot be included in a finalized analysis")
         baseline_id = connection.execute(
             "SELECT gst_baseline_id FROM scenario_revision WHERE scenario_revision_id = ?",

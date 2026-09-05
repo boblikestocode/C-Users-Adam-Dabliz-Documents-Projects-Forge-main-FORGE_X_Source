@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from database.services.analysis import (
@@ -19,6 +20,7 @@ from database.services.analysis import (
 from database.services.audit import AuditContext, verify_audit_chain
 from database.services.connection import connect
 from database.services.decimals import ExactDecimal
+from database.services.economic_age import confirm_economic_dates, classify_economic_age
 from database.services.integrity import verify_analysis_run_status_history, verify_finalized_analyses
 from database.validation.generate_synthetic import PROFILES, populate
 
@@ -141,6 +143,45 @@ class AnalysisServiceTests(unittest.TestCase):
         self.assertEqual(pin[1], "synthetic-registry-v1")
         self.assertEqual(verify_audit_chain(self.connection), [])
         self.assertEqual(verify_analysis_run_status_history(self.connection), [])
+        self.assertEqual(verify_finalized_analyses(self.connection), [])
+
+    def test_new_scenario_rejects_old_evidence_without_a_classification_job(self):
+        confirm_economic_dates(
+            self.connection, observation_ids=(self.observation[0],),
+            confirmed_economic_date="2020-01-01", date_precision="Day",
+            confirmed_by_user_id="buyer-1", confirmation_reason="Confirmed source submission",
+            recorded_at_utc="2026-09-03T12:00:00Z",
+            audit=audit("Date Confirmed", "2026-09-03T12:00:00Z"),
+        )
+        count = self.connection.execute("SELECT COUNT(*) FROM scenario_revision").fetchone()[0]
+        with self.assertRaisesRegex(ValueError, "economic-age exclusion"):
+            self._completed_analysis()
+        self.assertEqual(self.connection.execute("SELECT COUNT(*) FROM scenario_revision").fetchone()[0], count)
+
+    def test_finalization_consumes_corrected_date_despite_stale_context_classification(self):
+        for value, timestamp in (("2020-01-01", "2026-09-02T12:00:00Z"),
+                                 ("2026-01-01", "2026-09-03T12:00:00Z")):
+            confirm_economic_dates(
+                self.connection, observation_ids=(self.observation[0],),
+                confirmed_economic_date=value, date_precision="Day",
+                confirmed_by_user_id="buyer-1", confirmation_reason="Verified supplier submission",
+                recorded_at_utc=timestamp, audit=audit("Date Confirmed", timestamp),
+            )
+            if value == "2020-01-01":
+                classify_economic_age(
+                    self.connection, observation_ids=(self.observation[0],),
+                    as_of_date=date(2026, 9, 2), eligibility_rule_version_id=self.rule_id,
+                    confirmed_by_user_id="buyer-1", recorded_at_utc=timestamp,
+                    audit=audit("Age Classified", timestamp),
+                )
+        analysis_id, scenario_id, run_id = self._completed_analysis()
+        snapshot = finalize_analysis(
+            self.connection, analysis_id=analysis_id, scenario_revision_id=scenario_id,
+            calculation_run_id=run_id, finalized_by_user_id="buyer-1",
+            finalized_at_utc="2026-09-03T13:00:04Z", presentation_rule_version_id=self.rule_id,
+            audit=audit("Analysis Finalized", "2026-09-03T13:00:04Z"),
+        )
+        self.assertIsNotNone(snapshot)
         self.assertEqual(verify_finalized_analyses(self.connection), [])
 
     def test_result_without_lineage_rolls_back_complete_run(self) -> None:

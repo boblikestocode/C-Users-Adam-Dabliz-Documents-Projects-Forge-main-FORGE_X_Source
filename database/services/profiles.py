@@ -11,6 +11,8 @@ from .audit import AuditContext, append_audit_event, canonical_json
 from .connection import immediate_transaction
 from .decimals import ExactDecimal
 from .ids import uuid7
+from .profile_populations import (SCOPE_POPULATION_VERSION, scoped_activity_rows,
+                                  scoped_formula_rows)
 
 
 FORMULA_POPULATION_VERSION = "Economic Age and Cutoff v1"
@@ -50,8 +52,12 @@ def profile_activity_rows(
     commodity_id: str,
     evidence_cutoff_utc: str,
     active_window_start_utc: str,
+    region_code: str | None = None,
+    scope_population_version: str = "Legacy",
 ) -> list[sqlite3.Row]:
-    return connection.execute(
+    if scope_population_version not in ("Legacy", SCOPE_POPULATION_VERSION):
+        raise ValueError("Unsupported profile scope population version")
+    rows = connection.execute(
         """SELECT activity.supplier_activity_id, activity.activity_type,
                   activity.event_id, activity.quote_round_id,
                   activity.event_part_id, activity.occurred_at_utc,
@@ -63,7 +69,7 @@ def profile_activity_rows(
              AND event.commodity_id = ?
              AND COALESCE(activity.occurred_at_utc, activity.recorded_at_utc) >= ?
              AND activity.recorded_at_utc <= ?
-             AND NOT EXISTS (
+             AND (? = 1 OR NOT EXISTS (
                  SELECT 1 FROM observation_eligibility eligibility
                  WHERE eligibility.analytical_role = 'Economic Age'
                    AND eligibility.eligibility_status = 'Historical Context Only'
@@ -96,15 +102,19 @@ def profile_activity_rows(
                               (newer.recorded_at_utc = eligibility.recorded_at_utc AND
                                newer.eligibility_id > eligibility.eligibility_id))
                    )
-             )
+             ))
            ORDER BY COALESCE(activity.occurred_at_utc, activity.recorded_at_utc),
                     activity.supplier_activity_id""",
         (
             supplier_id, supplier_plant_id, supplier_plant_id,
             commodity_id, active_window_start_utc, evidence_cutoff_utc,
+            int(scope_population_version == SCOPE_POPULATION_VERSION),
             evidence_cutoff_utc, evidence_cutoff_utc,
         ),
     ).fetchall()
+    if scope_population_version == SCOPE_POPULATION_VERSION:
+        return scoped_activity_rows(connection, rows, region_code, evidence_cutoff_utc)
+    return rows
 
 
 def profile_formula_exception_rows(
@@ -112,7 +122,11 @@ def profile_formula_exception_rows(
     supplier_plant_id: str | None, commodity_id: str,
     evidence_cutoff_utc: str, active_window_start_utc: str,
     population_version: str = FORMULA_POPULATION_VERSION,
+    region_code: str | None = None,
+    scope_population_version: str = "Legacy",
 ) -> list[sqlite3.Row]:
+    if scope_population_version not in ("Legacy", SCOPE_POPULATION_VERSION):
+        raise ValueError("Unsupported profile scope population version")
     if population_version not in ("Legacy", FORMULA_POPULATION_VERSION):
         raise ValueError("Unsupported profile formula population version")
     eligibility_filter = ""
@@ -124,7 +138,7 @@ def profile_formula_exception_rows(
              AND membership.recorded_at_utc <= ?
              AND round.recorded_at_utc <= ?
              AND event.created_at_utc <= ?
-             AND NOT EXISTS (
+             AND (? = 1 OR NOT EXISTS (
                  SELECT 1 FROM observation_eligibility eligibility
                  WHERE eligibility.observation_id = observation.observation_id
                    AND eligibility.analytical_role = 'Economic Age'
@@ -139,9 +153,11 @@ def profile_formula_exception_rows(
                               (newer.recorded_at_utc = eligibility.recorded_at_utc AND
                                newer.eligibility_id > eligibility.eligibility_id))
                    )
-             )"""
-        parameters.extend([evidence_cutoff_utc] * 6)
-    return connection.execute(
+             ))"""
+        parameters.extend([evidence_cutoff_utc] * 4)
+        parameters.append(int(scope_population_version == SCOPE_POPULATION_VERSION))
+        parameters.extend([evidence_cutoff_utc] * 2)
+    rows = connection.execute(
         f"""SELECT DISTINCT integrity.formula_integrity_event_id,
                   integrity.observation_id, round.event_id,
                   integrity.recorded_at_utc
@@ -164,6 +180,9 @@ def profile_formula_exception_rows(
                     integrity.formula_integrity_event_id""",
         parameters,
     ).fetchall()
+    if scope_population_version == SCOPE_POPULATION_VERSION:
+        return scoped_formula_rows(connection, rows, region_code, evidence_cutoff_utc)
+    return rows
 
 
 def derive_profile_outputs(
@@ -256,17 +275,24 @@ def build_supplier_profile(
     started_at_utc: str,
     completed_at_utc: str,
     audit: AuditContext,
+    scope_population_version: str = SCOPE_POPULATION_VERSION,
 ) -> ProfileBuildResult:
+    if region_code is not None:
+        region_code = region_code.strip().upper()
+        if not region_code:
+            raise ValueError("Regional profiles require a nonempty region code")
     activities = profile_activity_rows(
         connection, supplier_id=supplier_id,
         supplier_plant_id=supplier_plant_id, commodity_id=commodity_id,
         evidence_cutoff_utc=evidence_cutoff_utc,
         active_window_start_utc=active_window_start_utc,
+        region_code=region_code, scope_population_version=scope_population_version,
     )
     formula_exceptions = profile_formula_exception_rows(
         connection, supplier_id=supplier_id, supplier_plant_id=supplier_plant_id,
         commodity_id=commodity_id, evidence_cutoff_utc=evidence_cutoff_utc,
         active_window_start_utc=active_window_start_utc,
+        region_code=region_code, scope_population_version=scope_population_version,
     )
     metrics, findings, manifest_hash, metric_hash, finding_hash = derive_profile_outputs(
         activities, formula_exceptions
@@ -295,10 +321,11 @@ def build_supplier_profile(
                (supplier_profile_reproduction_manifest_id,
                 supplier_profile_run_id, active_window_start_utc,
                 metric_manifest_hash, finding_manifest_hash, recorded_at_utc,
-                formula_population_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                formula_population_version, scope_population_version)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (uuid7(), profile_run_id, active_window_start_utc,
-             metric_hash, finding_hash, completed_at_utc, FORMULA_POPULATION_VERSION),
+             metric_hash, finding_hash, completed_at_utc, FORMULA_POPULATION_VERSION,
+             scope_population_version),
         )
         for code, value, evidence_count, event_count, confidence in metrics:
             connection.execute(
@@ -358,6 +385,7 @@ def build_supplier_profile(
                 "independent_event_count": independent_events,
                 "build_manifest_hash": manifest_hash,
                 "formula_population_version": FORMULA_POPULATION_VERSION,
+                "scope_population_version": scope_population_version,
             },
         )
     return ProfileBuildResult(

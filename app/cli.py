@@ -11,6 +11,7 @@ from database.services.connection import connect
 from database.services.integrity import assess_analysis_readiness
 from database.services.operations import operational_status
 from database.services.workflow import assess_event_workflow
+from database.services.supplier_rates import derive_supplier_rate_distributions
 
 
 def health_payload(database: Path) -> dict[str, object]:
@@ -55,6 +56,13 @@ def build_parser() -> argparse.ArgumentParser:
     event.add_argument("event_id")
     status = commands.add_parser("status", help="Show local health and publication continuity")
     status.add_argument("database", type=Path)
+    rates = commands.add_parser("supplier-rates", help="Inspect same-year regional supplier rate distributions")
+    rates.add_argument("database", type=Path)
+    rates.add_argument("supplier_id")
+    rates.add_argument("commodity_id")
+    rates.add_argument("region_code")
+    rates.add_argument("--cutoff", required=True, help="Evidence cutoff in UTC")
+    rates.add_argument("--plant", default=None)
     return parser
 
 
@@ -77,6 +85,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "event-status":
         payload = event_status_payload(args.database, args.event_id)
         exit_code = 0 if payload["analysis_ready"] else 1
+    elif args.command == "supplier-rates":
+        connection = connect(args.database, read_only=True)
+        try:
+            payload = derive_supplier_rate_distributions(
+                connection, supplier_id=args.supplier_id, commodity_id=args.commodity_id,
+                region_code=args.region_code, evidence_cutoff_utc=args.cutoff,
+                supplier_plant_id=args.plant,
+            )
+        finally:
+            connection.close()
+        exit_code = 0
     else:
         payload = operational_status_payload(args.database)
         exit_code = 0 if payload["database_health"]["ready"] else 1

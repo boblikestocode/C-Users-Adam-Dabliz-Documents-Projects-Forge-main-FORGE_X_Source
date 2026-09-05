@@ -55,6 +55,7 @@ class RoundEvolutionTests(unittest.TestCase):
         result = calculate_round_evolution(
             self.connection, event_id=self.event_id, supplier_id=self.supplier_id,
             program_years=(2027, 2028),
+            economic_age_cutoff_utc="2026-09-05T12:00:00Z",
         )
         self.assertEqual(len(result.rounds), 3)
         self.assertEqual(result.rounds[0].movement_from_initial_percent, Decimal(0))
@@ -73,9 +74,19 @@ class RoundEvolutionTests(unittest.TestCase):
         result = calculate_round_evolution(
             self.connection, event_id=self.event_id, supplier_id=self.supplier_id,
             program_years=(2028,), selected_round_ids=(rounds[0][0], rounds[2][0]),
+            economic_age_cutoff_utc="2026-09-05T12:00:00Z",
         )
         self.assertEqual([point.round_number for point in result.rounds], [1, 3])
         self.assertEqual(result.rounds[1].common_parts_to_prior, PROFILES["smoke"].parts)
+
+    def test_unassessed_quotes_age_out_of_new_round_evolution(self):
+        result = calculate_round_evolution(
+            self.connection, event_id=self.event_id, supplier_id=self.supplier_id,
+            program_years=(2027, 2028), economic_age_cutoff_utc="2030-09-05T12:00:00Z",
+        )
+        self.assertTrue(all(point.total_quoted_apv == 0 for point in result.rounds))
+        self.assertTrue(all(point.package_status != "Complete — Comparable for Award" for point in result.rounds))
+        self.assertTrue(all(point.common_parts_to_initial == 0 for point in result.rounds))
 
 
 if __name__ == "__main__":

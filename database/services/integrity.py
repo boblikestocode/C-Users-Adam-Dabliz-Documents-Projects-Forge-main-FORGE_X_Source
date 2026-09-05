@@ -1157,6 +1157,8 @@ def verify_generated_outputs(connection: sqlite3.Connection) -> list[IntegrityFi
 
 def verify_projection_generations(connection: sqlite3.Connection) -> list[IntegrityFinding]:
     findings: list[IntegrityFinding] = []
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(projection_generation_manifest)")}
+    age_column = ("economic_age_population_version" if "economic_age_population_version" in columns else "'Legacy'")
     manifested = {
         str(row[0]) for row in connection.execute(
             "SELECT projection_generation_id FROM projection_generation_manifest"
@@ -1174,14 +1176,15 @@ def verify_projection_generations(connection: sqlite3.Connection) -> list[Integr
             "Projection Generation", generation_id,
         ))
     for row in connection.execute(
-        """SELECT projection_generation_id, projection_type, event_id,
-                  evidence_cutoff_utc, build_manifest_hash, projected_row_count
+        f"""SELECT projection_generation_id, projection_type, event_id,
+                  evidence_cutoff_utc, build_manifest_hash, projected_row_count, {age_column}
            FROM projection_generation_manifest"""
     ):
-        generation_id, projection_type, event_id, cutoff, stored_hash, stored_count = row
+        generation_id, projection_type, event_id, cutoff, stored_hash, stored_count, age_version = row
         if projection_type != "Active Round Part":
             continue
-        expected_rows = projection_source_rows(connection, str(event_id), str(cutoff))
+        expected_rows = projection_source_rows(connection, str(event_id), str(cutoff),
+                                               economic_age_population_version=str(age_version))
         expected_tuples = [tuple(item) for item in expected_rows]
         expected_hash = hashlib.sha256(
             canonical_json(expected_tuples).encode("utf-8")
@@ -1223,13 +1226,16 @@ def verify_supplier_profile_generations(connection: sqlite3.Connection) -> list[
     )}
     population_column = ("reproduction.formula_population_version"
                          if "formula_population_version" in columns else "'Legacy'")
+    scope_column = ("reproduction.scope_population_version"
+                    if "scope_population_version" in columns else "'Legacy'")
     for row in connection.execute(
         f"""SELECT run.supplier_profile_run_id, run.supplier_id,
                   run.supplier_plant_id, run.commodity_id,
                   run.evidence_cutoff_utc, run.build_manifest_hash,
                   reproduction.active_window_start_utc,
                   reproduction.metric_manifest_hash,
-                  reproduction.finding_manifest_hash, {population_column}
+                  reproduction.finding_manifest_hash, {population_column},
+                  run.region_code, {scope_column}
            FROM supplier_profile_run run
            LEFT JOIN supplier_profile_reproduction_manifest reproduction
              ON reproduction.supplier_profile_run_id = run.supplier_profile_run_id
@@ -1247,12 +1253,14 @@ def verify_supplier_profile_generations(connection: sqlite3.Connection) -> list[
             connection, supplier_id=str(row[1]), supplier_plant_id=row[2],
             commodity_id=str(row[3]), evidence_cutoff_utc=str(row[4]),
             active_window_start_utc=str(row[6]),
+            region_code=row[10], scope_population_version=str(row[11]),
         )
         formula_exceptions = profile_formula_exception_rows(
             connection, supplier_id=str(row[1]), supplier_plant_id=row[2],
             commodity_id=str(row[3]), evidence_cutoff_utc=str(row[4]),
             active_window_start_utc=str(row[6]),
             population_version=str(row[9]),
+            region_code=row[10], scope_population_version=str(row[11]),
         )
         _, _, evidence_hash, expected_metric_hash, expected_finding_hash = (
             derive_profile_outputs(activities, formula_exceptions)
@@ -1306,6 +1314,30 @@ def verify_supplier_profile_generations(connection: sqlite3.Connection) -> list[
                 "SUPPLIER_PROFILE_REPRODUCTION_MISMATCH",
                 "Completed supplier profile does not reproduce from its pinned evidence population and active window",
                 "Supplier Profile Run", run_id,
+            ))
+    return findings
+
+
+def verify_supplier_rate_distributions(connection: sqlite3.Connection) -> list[IntegrityFinding]:
+    from .supplier_rates import derive_supplier_rate_distributions
+    findings = []
+    if not connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'supplier_rate_distribution_run'"
+    ).fetchone():
+        return findings
+    for row in connection.execute("SELECT * FROM supplier_rate_distribution_run"):
+        payload = derive_supplier_rate_distributions(
+            connection, supplier_id=row["supplier_id"], commodity_id=row["commodity_id"],
+            region_code=row["region_code"], supplier_plant_id=row["supplier_plant_id"],
+            evidence_cutoff_utc=row["evidence_cutoff_utc"],
+        )
+        serialized = canonical_json(payload)
+        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        if serialized != row["result_payload"] or digest != row["manifest_hash"]:
+            findings.append(_finding(
+                "SUPPLIER_RATE_DISTRIBUTION_MISMATCH",
+                "Supplier rate distribution does not reproduce from its cutoff evidence",
+                "Supplier Rate Distribution", row["distribution_run_id"],
             ))
     return findings
 
@@ -2282,6 +2314,7 @@ def run_health_gate(
     findings.extend(verify_generated_outputs(connection))
     findings.extend(verify_projection_generations(connection))
     findings.extend(verify_supplier_profile_generations(connection))
+    findings.extend(verify_supplier_rate_distributions(connection))
     findings.extend(verify_supplier_family_profile_generations(connection))
     findings.extend(verify_historical_baseline_summaries(connection))
     findings.extend(verify_historical_baseline_comparisons(connection))

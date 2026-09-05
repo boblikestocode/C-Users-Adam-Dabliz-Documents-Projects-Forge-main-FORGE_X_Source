@@ -49,7 +49,7 @@ class ApplicationCliTests(unittest.TestCase):
             exit_code = main(["migrate", str(database)])
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(len(payload["migrations"]), 49)
+        self.assertEqual(len(payload["migrations"]), 51)
         self.assertTrue(all(item["status"] == "Applied" for item in payload["migrations"]))
         self.assertEqual(len(payload["preflight_database_hash"]), 64)
         self.assertIsNotNone(payload["migration_execution_id"])
@@ -64,6 +64,16 @@ class ApplicationCliTests(unittest.TestCase):
         self.assertTrue(
             payload["authority_state"]["publication_requires_fresh_online_verification"]
         )
+
+    def test_supplier_rates_command_returns_scoped_json_without_mutation(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            exit_code = main(["supplier-rates", str(self.database), "supplier", "commodity",
+                              "mx", "--cutoff", "2026-09-05T12:00:00Z"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["region_code"], "MX")
+        self.assertEqual(payload["distributions"], [])
 
 
 if __name__ == "__main__":

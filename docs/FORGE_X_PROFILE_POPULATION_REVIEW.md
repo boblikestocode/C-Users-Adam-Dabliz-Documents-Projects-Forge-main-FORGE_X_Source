@@ -2,6 +2,11 @@
 
 Recorded: September 5, 2026
 
+Continuation note: migrations `0050`–`0051` address the regional-population,
+economic-age, and same-year rate-distribution candidates described below.
+See `FORGE_X_BUILD_2026-09-05.md` for exact boundaries, validation, and remaining
+production dependencies. The original review is retained as historical context.
+
 ## Requirement and identified gap
 
 The database design handoff section 13 excludes `Historical Context Only` evidence from supplier-profile status and formula-performance totals. Section 19 requires frozen analytical results to remain reproducible. Model requirements section 15.6 separates current conclusions from old supporting evidence.

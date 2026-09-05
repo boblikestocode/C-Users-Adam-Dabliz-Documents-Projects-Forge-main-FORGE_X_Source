@@ -3,6 +3,9 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import datetime, timezone
+
+from .profile_populations import economic_age_at_cutoff
 
 
 @dataclass(frozen=True)
@@ -72,18 +75,14 @@ def _lifecycle_fpv(
     return values
 
 
-def _round_prices(connection: sqlite3.Connection, round_id: str) -> tuple[dict[str, Decimal], dict[str, str]]:
+def _round_prices(connection: sqlite3.Connection, round_id: str, age_cutoff_utc: str) -> tuple[dict[str, Decimal], dict[str, str]]:
     rows = connection.execute(
         """SELECT ro.event_part_id, ro.membership_status,
-                  price.decimal_coefficient, price.decimal_scale
+                  price.decimal_coefficient, price.decimal_scale, ro.observation_id
            FROM round_observation ro
            LEFT JOIN submitted_datum price
              ON price.observation_id = ro.observation_id
             AND price.field_code = 'PIECE_PRICE' AND price.precision_status = 'Eligible'
-            AND EXISTS (
-                SELECT 1 FROM v_economically_eligible_observation eligible
-                WHERE eligible.observation_id = price.observation_id
-            )
            WHERE ro.quote_round_id = ?""", (round_id,),
     ).fetchall()
     prices: dict[str, Decimal] = {}
@@ -93,19 +92,16 @@ def _round_prices(connection: sqlite3.Connection, round_id: str) -> tuple[dict[s
         if part_id in states:
             raise ValueError(f"Round has multiple records for event part {part_id}")
         states[part_id] = state
-        if state in ("Submitted", "Added", "Unchanged") and row[2] is not None:
+        if (state in ("Submitted", "Added", "Unchanged") and row[2] is not None
+                and economic_age_at_cutoff(connection, str(row[4]), age_cutoff_utc).eligibility_status == "Eligible"):
             prices[part_id] = _decimal(row[2], row[3])
     decisions = connection.execute(
         """SELECT decision.event_part_id, decision.decision_code,
-                  price.decimal_coefficient, price.decimal_scale
+                  price.decimal_coefficient, price.decimal_scale, decision.prior_observation_id
            FROM carry_forward_decision decision
            LEFT JOIN submitted_datum price
              ON price.observation_id = decision.prior_observation_id
             AND price.field_code = 'PIECE_PRICE' AND price.precision_status = 'Eligible'
-            AND EXISTS (
-                SELECT 1 FROM v_economically_eligible_observation eligible
-                WHERE eligible.observation_id = price.observation_id
-            )
            WHERE decision.target_quote_round_id = ?
              AND NOT EXISTS (
                  SELECT 1 FROM carry_forward_decision newer
@@ -121,7 +117,8 @@ def _round_prices(connection: sqlite3.Connection, round_id: str) -> tuple[dict[s
         if part_id in prices:
             continue
         states[part_id] = "Carried Forward" if decision == "Carry Forward" else decision
-        if decision == "Carry Forward" and row[2] is not None:
+        if (decision == "Carry Forward" and row[2] is not None
+                and economic_age_at_cutoff(connection, str(row[4]), age_cutoff_utc).eligibility_status == "Eligible"):
             prices[part_id] = _decimal(row[2], row[3])
     return prices, states
 
@@ -137,7 +134,9 @@ def calculate_round_evolution(
     supplier_id: str,
     program_years: tuple[int, ...],
     selected_round_ids: tuple[str, ...] | None = None,
+    economic_age_cutoff_utc: str | None = None,
 ) -> SupplierRoundEvolution:
+    age_cutoff = economic_age_cutoff_utc or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     parameters: list[object] = [event_id, supplier_id]
     selection = ""
     if selected_round_ids is not None:
@@ -164,7 +163,7 @@ def calculate_round_evolution(
     missing_fpv = required_parts - fpv.keys()
     if missing_fpv:
         raise ValueError(f"Confirmed GST baseline is missing FPV for {len(missing_fpv)} scoped parts")
-    resolved = [(row, *_round_prices(connection, str(row[0]))) for row in rounds]
+    resolved = [(row, *_round_prices(connection, str(row[0]), age_cutoff)) for row in rounds]
     initial_prices = resolved[0][1]
     points: list[QuoteRoundEvolutionPoint] = []
     for index, (round_row, prices, states) in enumerate(resolved):

@@ -78,7 +78,7 @@ class SupplierProfileServiceTests(unittest.TestCase):
             active_window_start_utc="2024-01-01T00:00:00Z", **kwargs,
         )
 
-    def _formula_profile(self, cutoff: str):
+    def _formula_profile(self, cutoff: str, **kwargs):
         return build_supplier_profile(
             self.connection, supplier_id=self.supplier_id,
             supplier_plant_id=self.plant_id, commodity_id=self.commodity_id,
@@ -86,7 +86,7 @@ class SupplierProfileServiceTests(unittest.TestCase):
             active_window_start_utc="2024-01-01T00:00:00Z",
             eligibility_rule_version_id=self.rule_id,
             calculation_rule_version_id=self.rule_id, engine_version_id=self.engine_id,
-            started_at_utc=cutoff, completed_at_utc=cutoff, audit=audit(),
+            started_at_utc=cutoff, completed_at_utc=cutoff, audit=audit(), **kwargs,
         )
 
     def _seed_formula_exceptions(self, recorded_at="2026-09-03T15:00:00Z"):
@@ -162,7 +162,7 @@ class SupplierProfileServiceTests(unittest.TestCase):
         with patch("database.services.profiles.profile_formula_exception_rows", return_value=legacy_rows), patch(
             "database.services.profiles.FORMULA_POPULATION_VERSION", "Legacy"
         ):
-            legacy = self._formula_profile(cutoff)
+            legacy = self._formula_profile(cutoff, scope_population_version="Legacy")
         current = self._formula_profile(cutoff)
         for result, expected_count in ((legacy, 2), (current, 1)):
             self.assertEqual(self.connection.execute(

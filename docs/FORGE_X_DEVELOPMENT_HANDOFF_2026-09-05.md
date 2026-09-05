@@ -1,6 +1,7 @@
 # Forge X development handoff — September 5, 2026
 
-Status: Development paused at the user's request. Resume implementation only when requested.
+Status: Historical pause handoff. The user subsequently resumed development;
+see `FORGE_X_BUILD_2026-09-05.md` for the continuation changes and current dependencies.
 
 Project: `C:\Users\Adam Dabliz\Documents\Projects\Forge-main\FORGE_X_Source`
 

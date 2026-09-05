@@ -23,6 +23,31 @@ The initial database-design package is maintained in:
 
 ## Current implementation status
 
+The September 5 continuation is documented in `docs/FORGE_X_BUILD_2026-09-05.md`.
+Migrations now extend through `0051`. New supplier profiles enforce regional source
+lineage and reevaluate economic age at their pinned cutoff. New piece-price
+projections, scenario creation/finalization, and round evolution also check fresh
+economic age. Prior profile and projection generations retain their original
+population versions for reproduction.
+
+Same-year supplier-rate distributions now retain source-linked labor, separate
+overhead categories, and profit rates under buyer-confirmed comparable bases.
+They separate region, plant, year, currency, and units, report raw and equal-event
+statistics, and preserve immutable results with independent health reconstruction.
+Numerical traffic-light thresholds remain unconfigured pending product-owner rules.
+
+Inspect confirmed rate evidence without changing the database:
+
+```powershell
+python -m app.cli supplier-rates .\development\forge-x.db SUPPLIER_ID COMMODITY_ID US --cutoff 2026-09-05T12:00:00Z
+```
+
+Rate comparability is recorded with
+`database.services.supplier_rates.confirm_supplier_rate_interpretation`;
+`build_supplier_rate_distributions` persists a reproducible generation. Both use
+the existing audit context and immutable submitted values. Rate interpretation
+does not create values or convert units.
+
 Requirements consolidation and database design are in progress. The logical model, integrity/state model, and initial query/index plan are defined. Executable commodity core/intelligence migrations, the central-registry migration, a checksum-verifying migration runner, deterministic validation data, query benchmarks, the safe database service layer, and the first application-facing workflow CLI are scaffolded.
 
 The database service layer provides:
