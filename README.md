@@ -14,6 +14,10 @@ Forge X is a clean-slate supplier cost intelligence and sourcing analysis produc
 
 The consolidated approved requirements and open decisions are maintained in `docs/FORGE_X_MODEL_REQUIREMENTS.md`.
 
+The first three worked cost traces and the minimal cost-evidence/comparability
+extensions are defined in
+`docs/FORGE_X_COST_EVIDENCE_COMPARABILITY_SPEC_2026-09-11.md`.
+
 The initial database-design package is maintained in:
 
 - `docs/FORGE_X_DATABASE_DESIGN_HANDOFF.md`
