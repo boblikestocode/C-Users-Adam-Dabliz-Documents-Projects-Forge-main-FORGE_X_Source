@@ -18,6 +18,11 @@ The first three worked cost traces and the minimal cost-evidence/comparability
 extensions are defined in
 `docs/FORGE_X_COST_EVIDENCE_COMPARABILITY_SPEC_2026-09-11.md`.
 
+The active design-build package is indexed in
+`docs/FORGE_X_DESIGN_BUILD_INDEX_2026-09-11.md`. This phase defines the logic,
+platform, schema, process, computation, scalability, and implementation
+playbook. It does not authorize production engine coding.
+
 The initial database-design package is maintained in:
 
 - `docs/FORGE_X_DATABASE_DESIGN_HANDOFF.md`
